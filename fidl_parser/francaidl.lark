@@ -1,0 +1,398 @@
+// (C) 2022 Magnus Feuer
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// Franca IDL Lark grammar file based on Franca User Guide 0.12.0.1
+//
+// [x.y.z] in comments refers to chapters in the User Guide.
+//
+
+root: "package" FIDL_NAME (interface | type_collection | import)*
+
+// [5.1]
+// All datatypes
+//
+?datatype: primitive_type
+           | implicit_array
+           | defined_type
+
+
+// Defined datatype that needs to be
+// resolved by the parser to the corresponding
+// struct or enum.
+//
+defined_type.1: FIDL_NAME
+
+// [5.1.1]
+// Primitive datatypes.
+//
+primitive_type: FIDL_INT8 | FIDL_UINT8
+              | FIDL_INT16 | FIDL_UINT16
+              | FIDL_INT32 | FIDL_UINT32
+              | FIDL_INT64 | FIDL_UINT64
+              | FIDL_BOOLEAN | FIDL_FLOAT
+              | FIDL_DOUBLE | FIDL_STRING
+              | FIDL_BYTEBUFFER | fidl_integer
+
+
+// [5.1.2]
+// "Integer" with optional range declaration
+//
+fidl_integer: "Integer" (integer_range )?
+integer_range: "(" MIN_RANGE "," MAX_RANGE ")"
+MIN_RANGE: SIGNED_INT | FIDL_MININT
+MAX_RANGE: SIGNED_INT | FIDL_MAXINT
+
+
+// [5.1.3]
+// Explicit arrays
+//
+explicit_array: "array" FIDL_NQ_NAME "of" (primitive_type | implicit_array | defined_type)
+
+// [5.1.3]
+// Implicit arrays
+//
+implicit_array: datatype "[]"
+
+// [5.1.4]
+// Enumerations
+// Enumerations with defined values
+// Inherited enumerations
+//
+?enumeration: base_enumeration | inherited_enumeration
+base_enumeration:      "enumeration" FIDL_NQ_NAME "{" enumerator_member+ "}"
+inherited_enumeration: "enumeration" FIDL_NQ_NAME "extends" FIDL_NAME "{" enumerator_member+ "}"
+enumerator_member: FIDL_NQ_NAME  ("=" expression)?
+
+// [5.1.5]
+// Structures
+// Inherited structs
+//
+?struct: base_struct | inherited_struct
+base_struct:      "struct" FIDL_NQ_NAME FIDL_POLYMORPHIC? "{" member+ "}"
+inherited_struct: "struct" FIDL_NQ_NAME "extends" FIDL_NAME "{" member+ "}"
+
+
+// [5.1.6]
+// Unions
+// Inherited unions
+//
+?union: base_union | inherited_union
+base_union:      "union" FIDL_NQ_NAME "{" member+ "}"
+inherited_union: "union" FIDL_NQ_NAME "extends" FIDL_NAME "{" member+ "}"
+
+
+// [5.1.7]
+// Maps
+//
+map:           "map" FIDL_NQ_NAME map_body
+inherited_map: "map" FIDL_NQ_NAME "extends" FIDL_NAME map_body
+?map_body: "{" map_member+ "}"
+map_member: ( map_key "to" map_value)
+map_key: datatype
+map_value: datatype
+
+// Generic datatype member
+// Can either be a simple declaration or a const declaration with an initializer
+?member: (datatype FIDL_NQ_NAME | "const" FIDL_NQ_NAME "=" const_init)
+
+// [5.1.8]
+// Typedefs
+//
+typedef: "typedef" FIDL_NQ_NAME "is" datatype
+
+// [5.2.1]
+// Primitive constants
+//
+constant: "const" datatype FIDL_NQ_NAME "=" const_init
+
+// [5.2.2]
+// Complex constants
+//
+const_init: expression | const_array_init | const_struct_init
+const_array_init: "[" ( const_init ("," const_init)* )? "]" 
+const_struct_init: "{" const_struct_init_member? ("," const_struct_init_member)* "}"
+const_struct_init_member: FIDL_VAR_NAME ":" expression
+
+// [5.3]
+expression: ( "(" expression ")"  | arithmetic_op | fidl_const | comparison_op | FIDL_NAME )
+
+// [5.3.2]
+// Constant values
+//
+?fidl_const: FIDL_CONST_TRUE
+            | FIDL_CONST_FALSE
+            | FIDL_CONST_INT
+            | FIDL_CONST_HEX
+            | FIDL_CONST_BIN
+            | FIDL_CONST_FLOAT
+            | FIDL_CONST_DOUBLE
+            | FIDL_CONST_STRING
+
+FIDL_CONST_TRUE: "true"
+FIDL_CONST_FALSE: "false"
+FIDL_CONST_INT: SIGNED_INT
+
+// Prio 2 because 0xAB should not be parsed as FIDL_CONST_INT(0) FIDL_NQ_NAME(xAB)
+FIDL_CONST_HEX.2: HEX_NUMBER 
+
+// Prio 2 because 0b01 should not be parsed as FIDL_CONST_INT(0) FIDL_NQ_NAME(b01)
+FIDL_CONST_BIN.2: BIN_NUMBER
+
+FIDL_CONST_FLOAT:  (SIGNED_FLOAT | FLOAT) "f"
+FIDL_CONST_DOUBLE: (SIGNED_FLOAT | FLOAT) "d"
+FIDL_CONST_STRING: ESCAPED_STRING
+
+
+// [5.3.3]
+// Comparison operators
+//
+// ISSUE:
+// Apparently we will have to make this up ourselves since
+// boolean operators are not documented.
+// However, C operators are used in testcases/core_tests/evaluation/IntegerExpressions.fidl
+// We'll use C operators for now.
+//
+?comparison_op: cond_lhs EQ cond_rhs
+           | cond_lhs LT cond_rhs
+           | cond_lhs GT cond_rhs
+           | cond_lhs LTE cond_rhs
+           | cond_lhs GTE cond_rhs
+           | cond_lhs NE cond_rhs
+           | cond_lhs AND cond_rhs
+           | cond_lhs OR cond_rhs
+           | NOT expression
+
+cond_lhs.2: expression
+cond_rhs.1: expression
+EQ: "=="
+LT: "<"
+GT: ">"
+LTE: "<="
+GTE: ">="
+NE: "!="
+AND: "&&"
+OR: "||"
+NOT: "!"
+
+// [5.3.4]
+// Constant arithmetic operations
+//
+// ISSUE:
+// Apparently we will have to make this up ourselves since
+// boolean operators are not documented.
+//
+arithmetic_op: arit_mul
+          | arit_div
+          | arit_mod
+          | arit_add
+          | arit_sub
+
+arit_mul: lhs "*" rhs
+arit_div: lhs "/" rhs
+arit_mod: lhs "%" rhs
+arit_add: lhs "+" rhs
+arit_sub: lhs "-" rhs // Higher priority than FIDL_CONST_INT (that can be -3)
+
+lhs.2: expression
+rhs.1: expression
+
+// [5.3.5]
+// Boolean operators
+//
+// ISSUE:
+// Apparently we will have to make this up ourselves since
+// boolean operators are not documented.
+//
+// FIXME: Implemenet
+//
+boolean_op:
+
+// [5.4]
+// Type collection
+// FIXME: Allow "version" element to be anywhere in type collection body.
+//
+type_collection: "typeCollection" FIDL_NQ_NAME type_collection_body
+type_collection_body: "{" version? ( constant | map | typedef |struct | enumeration | explicit_array | union | map | datatype )* "}"
+
+// [5.5]
+// Interfaces
+// FIXME: Allow "version" element to be anywhere in interface body.
+//
+interface: "interface" FIDL_NQ_NAME  extends_interface? manages_interface? interface_body
+extends_interface: "extends" FIDL_NAME
+manages_interface: "manages" FIDL_NAME ( "," FIDL_NAME)*
+interface_body: "{" version? ( constant | map | typedef | struct | enumeration | explicit_array | union | attribute | method | broadcast | enumeration | contract )* "}"
+
+// [5.5.2]
+// Attributes
+//
+attribute: "attribute" datatype FIDL_NQ_NAME FIDL_READONLY? FIDL_NOREAD? FIDL_NOSUBSCRIPTIONS?
+
+
+// [5.5.3]
+// Methods
+//
+method: "method" FIDL_NQ_NAME (":" FIDL_VAR_NAME)? "{" arg_in? arg_out? arg_error? "}"
+
+FIDL_VAR_NAME: FIDL_NQ_NAME
+
+// In and out section of method
+arg_in: "in" "{" member* "}"
+arg_out: "out" "{" member* "}"
+
+// Error section of method
+// Same syntax as enumerators accoring to the doc.
+//
+// We support both:
+// error { ERR1, ERR2, ... }
+//  - and -
+// error MyEnumType
+//
+arg_error: "error" (error_body | FIDL_NQ_NAME | FIDL_FQ_NAME)
+error_body: "{" error_member+ "}"
+error_member: FIDL_NQ_NAME ("=" expression)?
+
+
+// [5.5.4]
+// Broadcasts
+//
+broadcast: "broadcast" FIDL_NQ_NAME (":" FIDL_VAR_NAME)? FIDL_SELECTIVE? "{" arg_out?  "}"
+
+// [5.6]
+// Contracts
+//
+contract: "contract" "{" contract_body "}"
+
+contract_body: ("vars" "{" vars_body* "}" )? ("PSM" "{" psm_body* "}" )?
+
+// [5.6.3]
+// Contract transition actions
+//
+psm_body: ("initial" FIDL_INITIAL_STATE)? ("state" FIDL_NQ_NAME "{" (on_call | on_signal | on_set | on_respond | on_error)* "}" )*
+
+FIDL_INITIAL_STATE: FIDL_NQ_NAME
+
+// On call action
+//
+on_call: "on" "call" FIDL_NQ_NAME (":" FIDL_VAR_NAME)? ("[" comparison_op "]")? "->" FIDL_TARGET_STATE ("{" statement* "}")?
+
+// On signal action
+//
+on_signal: "on" "signal" FIDL_NQ_NAME  (":" FIDL_VAR_NAME)? ("[" comparison_op "]")? "->" FIDL_TARGET_STATE ("{" statement* "}")?
+
+// On set action
+// ISSUE: In tests but undocumented!
+//
+on_set: "on" "set" FIDL_NQ_NAME  (":" FIDL_VAR_NAME)? ("[" comparison_op "]")? "->" FIDL_TARGET_STATE ("{" statement* "}")?
+
+// On respons action
+// ISSUE: In tests but undocumented!
+//
+on_respond: "on" "respond" FIDL_NQ_NAME  (":" FIDL_VAR_NAME)? ("[" comparison_op "]")? "->" FIDL_TARGET_STATE ("{" statement* "}")?
+
+// On error action
+// ISSUE: In tests but undocumented!
+//
+on_error: "on" "error" FIDL_NQ_NAME  (":" FIDL_VAR_NAME)? ("[" comparison_op "]")? "->" FIDL_TARGET_STATE ("{" statement* "}")?
+
+// [5.6.4]
+// Contract state variables
+// 
+// ISSUE: 
+// In vars {} blocks we suddenly use ; to terminate declarations.
+// In testcases/core_tests/contracts/ValidUsageOfErrorKeyWords.fidl semicolons are used in the vars {} block.
+// In testcases/core_tests/Integertypes/70-IntegerTypes.fidl they are not used!
+// We make semicolon opional for now.
+//
+vars_body: datatype FIDL_NQ_NAME ";"?
+
+// FIXME: Parse statement?
+statement: /[^\n]+/
+
+FIDL_TARGET_STATE: FIDL_NQ_NAME
+
+
+// [5.7.1]
+// Unstructured comments
+//
+%ignore CPP_COMMENT
+%ignore C_COMMENT
+
+// [5.7.2]
+// Structured comment
+//
+// FIXME: Parse these into a token that can be further
+//        processed by additional tooling.
+//
+%ignore "<**" /(.|\n)+?/ "**>"
+
+// [5.8.3]
+// Import statements
+?import: import_model | import_namespace
+
+import_model: "import" "model" FIDL_FILE_NAME
+import_namespace: "import" FIDL_NQ_NAMESPACE "from" FIDL_FILE_NAME
+FIDL_NQ_NAMESPACE: ("_"|LETTER) ("_"|LETTER|DIGIT|"."|"*")*
+FIDL_FILE_NAME: FIDL_CONST_STRING
+
+// Version
+version: "version" "{" "major" FIDL_MAJOR_VERSION_INT "minor" FIDL_MINOR_VERSION_INT "}"
+
+FIDL_MAJOR_VERSION_INT: INT
+FIDL_MINOR_VERSION_INT: INT
+FIDL_TYPE_COLLECTION: "typeCollection"
+// Non-qualified name
+FIDL_NQ_NAME: ("_"|LETTER) ("_"|LETTER|DIGIT)*
+
+// Fully qualified names. Accept periods.
+FIDL_FQ_NAME: FIDL_NQ_NAME ("." FIDL_NQ_NAME)+
+
+// Derefenced name
+// ISSUE: Not documented but used in testcases/core_tests/evaluation/IntegerExpressions.fidl
+//
+FIDL_DEREFENCED_NAME: FIDL_NQ_NAME "->" FIDL_NQ_NAME ( "->" FIDL_NQ_NAME )*
+
+FIDL_NAME.0: FIDL_DEREFENCED_NAME | FIDL_FQ_NAME | FIDL_NQ_NAME 
+
+FIDL_POLYMORPHIC: "polymorphic"
+FIDL_READONLY: "readonly"
+FIDL_NOREAD: "noRead"
+FIDL_NOSUBSCRIPTIONS: "noSubscriptions"
+FIDL_SELECTIVE: "selective"
+FIDL_MININT: "minInt"
+FIDL_MAXINT: "maxInt"
+FIDL_INT8: "Int8"
+FIDL_UINT8: "UInt8"
+FIDL_INT16: "Int16"
+FIDL_UINT16: "UInt16"
+FIDL_INT32: "Int32"
+FIDL_UINT32: "UInt32"
+FIDL_INT64: "Int64"
+FIDL_UINT64: "UInt64"
+FIDL_BOOLEAN: "Boolean"
+FIDL_FLOAT: "Float"
+FIDL_DOUBLE: "Double"
+FIDL_STRING: "String"
+FIDL_BYTEBUFFER: "ByteBuffer"
+
+%import common.INT
+%import common.SIGNED_INT
+%import common.CPP_COMMENT
+%import common.C_COMMENT
+%import common.WS
+%import common.LETTER
+%import common.DIGIT
+%import common.SIGNED_INT
+%import common.DECIMAL_INT
+%import common.DECIMAL
+%import common.FLOAT
+%import common.DOUBLE
+%import common.SIGNED_FLOAT
+// %import common._EXP
+%import common.ESCAPED_STRING
+%import python.HEX_NUMBER
+%import python.BIN_NUMBER
+%ignore WS
